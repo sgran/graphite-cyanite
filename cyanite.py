@@ -53,10 +53,20 @@ urllength = 8000
 
 
 class CyaniteReader(object):
-    __slots__ = ('path',)
+    __slots__ = ('path', 'start', 'end')
 
     def __init__(self, path):
         self.path = path
+        now = time.time()
+        data = requests.get(urls.metrics, params={'path': self.path,
+                                                  'from': now - 180 * 86400,
+                                                  'to': now}).json()
+        try:
+            self.start = data['from']
+            self.end = data['to']
+        except KeyError:
+            self.start = now - 2 * 3600
+            self.end = now
 
     def fetch(self, start_time, end_time):
         data = requests.get(urls.metrics, params={'path': self.path,
@@ -68,10 +78,7 @@ class CyaniteReader(object):
         return time_info, data['series'].get(self.path, [])
 
     def get_intervals(self):
-        # TODO use cyanite info
-        start = time.time() - 3600 * 2
-        end = max(start, time.time())
-        return IntervalSet([Interval(start, end)])
+        return IntervalSet([Interval(self.start, self.end)])
 
 
 class CyaniteFinder(object):
