@@ -53,10 +53,11 @@ urllength = 8000
 
 
 class CyaniteReader(object):
-    __slots__ = ('path',)
+    __slots__ = ('path', 'cache',)
 
-    def __init__(self, path):
+    def __init__(self, path, cache):
         self.path = path
+        self.cache = cache
 
     def fetch(self, start_time, end_time):
         data = requests.get(urls.metrics, params={'path': self.path,
@@ -76,8 +77,10 @@ class CyaniteReader(object):
 
 class CyaniteFinder(object):
     __fetch_multi__ = 'cyanite'
+    __slots__ = ('cache',)
 
     def __init__(self, config=None):
+
         global urls
         global urllength
         if config is not None:
@@ -95,13 +98,33 @@ class CyaniteFinder(object):
             urllength = getattr(settings, 'CYANITE_URL_LENGTH', urllength)
         urls = URLs(urls)
 
+        try:
+            from graphite_api.app import app
+            self.cache = app.cache
+        except:
+            try:
+                from django.core.cache import cache
+                self.cache = cache
+            except:
+                self.cache = None
+
     def find_nodes(self, query):
-        paths = requests.get(urls.paths,
-                             params={'query': query.pattern}).json()
+        paths = None
+        key_name = "%s_nodes" % query.pattern
+
+        if self.cache:
+            paths = self.cache.get(key_name)
+
+        if paths is None:
+            paths = requests.get(urls.paths,
+                                 params={'query': query.pattern}).json()
+            if self.cache:
+                self.cache.add(key_name, paths, timeout=300)
+
         for path in paths:
             if path['leaf']:
                 yield CyaniteLeafNode(path['path'],
-                                      CyaniteReader(path['path']))
+                                      CyaniteReader(path['path'], self.cache))
             else:
                 yield BranchNode(path['path'])
 
